@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -12,33 +13,27 @@ import (
 	"google.golang.org/adk/tool/functiontool"
 )
 
-type HTTPClient struct {
-	client http.Client
+type TaskAPIClient struct {
+	client *http.Client
 }
 
-type FindTaskIdInput struct {
-	Name   *string `json:"name", jsonschema:"todo task name. for used search taskID"`
-	UserId int     `json:"user_id", jsonschema:"Allow task operation user"`
-}
-
-type FindTaskIdOutputRecord struct {
-	TaskId      int    `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-}
-
-type FindTaskIdResponse struct {
-	Data []FindTaskIdOutputRecord `json:"result"`
+func NewTaskAPIClient() *TaskAPIClient {
+	return &TaskAPIClient{
+		client: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+	}
 }
 
 func NewFunctionTools() []tool.Tool {
+	apiClient := NewTaskAPIClient()
 	// Add the tool to the agent
 	taskTool01, err := functiontool.New(
 		functiontool.Config{
 			Name:        "get_taskId_by_input_parameter",
 			Description: "Retrieves the todo taskId by input parameter",
 		},
-		FindTaskIdByInput,
+		apiClient.FindTaskIdByInput,
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -47,16 +42,12 @@ func NewFunctionTools() []tool.Tool {
 	return []tool.Tool{taskTool01}
 }
 
-func FindTaskIdByInput(ctx tool.Context, input FindTaskIdInput) (FindTaskIdResponse, error) {
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
+func (tc *TaskAPIClient) FindTaskIdByInput(ctx tool.Context, input FindTaskIdInput) (FindTaskIdResponse, error) {
 	req, err := http.NewRequest(http.MethodGet, FindTaskInputToRequestURL(input), nil)
 	if err != nil {
 		return FindTaskIdResponse{}, err
 	}
-	res, err := client.Do(req)
+	res, err := tc.client.Do(req)
 	if err != nil {
 		return FindTaskIdResponse{}, err
 	}
@@ -66,7 +57,7 @@ func FindTaskIdByInput(ctx tool.Context, input FindTaskIdInput) (FindTaskIdRespo
 	if err != nil {
 		return FindTaskIdResponse{}, err
 	}
-	fmt.Println("[FindTaskIdByInput] response body:", string(body))
+	slog.Info("status:", res.StatusCode)
 
 	// 非2xxの場合は本文を含めてエラー化
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
